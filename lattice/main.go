@@ -15,45 +15,41 @@ func main() {
 	fmt.Printf("n=%d\n", compute(nx, ny))
 }
 
-func walk(dx int, dy int, nx int, ny int, start chan int, end chan int) {
+func walk(dx int, dy int, nx int, ny int, ch chan bool) {
 	// fmt.Printf("%d / %d, %d / %d\n", dx, dy, nx, ny)
 	if dx == nx && dy == ny {
-		end <- 1
+		ch <- false // end
 		return
 	} else if dx == nx {
-		walk(dx, dy+1, nx, ny, start, end)
+		walk(dx, dy+1, nx, ny, ch)
 	} else if dy == ny {
-		walk(dx+1, dy, nx, ny, start, end)
+		walk(dx+1, dy, nx, ny, ch)
 	} else {
-		go walk(dx+1, dy, nx, ny, start, end)
-		start <- 1
-		go walk(dx, dy+1, nx, ny, start, end)
+		ch <- true // start
+		go walk(dx, dy+1, nx, ny, ch)
+		walk(dx+1, dy, nx, ny, ch)
 	}
 }
 
 func compute(nx, ny int) int {
-	start := make(chan int)
-	end := make(chan int)
+	ch := make(chan bool, 100)
 
-	go walk(0, 0, nx, ny, start, end)
+	go walk(0, 0, nx, ny, ch)
 
 	ended := 0
 	started := 1
 
 	for {
-		select {
-		case val := <-start:
-			started += val
-			// fmt.Printf("started: %d\n", started)
-		case val := <-end:
-			ended += val
-			// fmt.Printf("ended: %d\n", ended)
+		val := <-ch
+		if val {
+			started++
+		} else {
+			ended++
 		}
 		if ended == started {
 			break
 		}
 	}
-	close(start)
-	close(end)
+	close(ch)
 	return ended
 }
