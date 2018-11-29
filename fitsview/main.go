@@ -37,6 +37,19 @@ type cursor struct {
 	img  int
 }
 
+func (cur *cursor) Next(nbFiles int) {
+	cur.file = (cur.file + 1) % nbFiles
+	cur.img = 0
+}
+
+func (cur *cursor) Prev(nbFiles int) {
+	cur.file = (cur.file - 1)
+	if cur.file < 0 {
+		cur.file = nbFiles + cur.file
+	}
+	cur.img = 0
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		log.Fatal("usage: script FILE ...")
@@ -118,7 +131,8 @@ func newWindow(application *gtk.Application) *gtk.ApplicationWindow {
 	// Other prefixes can be added to widgets via InsertActionGroup
 	// menu.Append("New Window", "app.new")
 	// menu.Append("Close Window", "win.close")
-	// menu.Append("Custom Panic", "custom.panic")
+	menu.Append("Next file [right]", "custom.nextfile")
+	menu.Append("Prev file [left]", "custom.prevfile")
 	menu.Append("Quit", "app.quit")
 
 	// Create the action "win.close"
@@ -129,28 +143,13 @@ func newWindow(application *gtk.Application) *gtk.ApplicationWindow {
 	win.AddAction(aClose)
 
 	// Create and insert custom action group with prefix "custom"
-	// customActionGroup := glib.SimpleActionGroupNew()
-	// win.InsertActionGroup("custom", customActionGroup)
-
-	// Create an action in the custom action group
-	// aPanic := glib.SimpleActionNew("panic", nil)
-	// aPanic.Connect("activate", func() {
-	// 	lbl.SetLabel("PANIC!")
-	// })
-	// customActionGroup.AddAction(aPanic)
-	// win.AddAction(aPanic)
-
-	mbtn.SetMenuModel(&menu.MenuModel)
+	customActionGroup := glib.SimpleActionGroupNew()
+	win.InsertActionGroup("custom", customActionGroup)
 
 	// add the menu button to the header
+	mbtn.SetMenuModel(&menu.MenuModel)
 	header.PackStart(mbtn)
 	win.SetTitlebar(header)
-
-	// Create a new label widget to show in the window.
-	// l, err := gtk.LabelNew("Hello, gotk3!")
-	// if err != nil {
-	// 	log.Fatal("Unable to create label:", err)
-	// }
 
 	imageWidget, err := gtk.ImageNew()
 	win.Add(imageWidget)
@@ -166,21 +165,33 @@ func newWindow(application *gtk.Application) *gtk.ApplicationWindow {
 	}
 	drawImage(cur.file)
 
+	// Create an action in the custom action group
+	aNextFile := glib.SimpleActionNew("nextfile", nil)
+	aNextFile.Connect("activate", func() {
+		cur.Next(nbFiles)
+		drawImage(cur.file)
+	})
+	customActionGroup.AddAction(aNextFile)
+	win.AddAction(aNextFile)
+
+	aPrevFile := glib.SimpleActionNew("prevfile", nil)
+	aPrevFile.Connect("activate", func() {
+		cur.Prev(nbFiles)
+		drawImage(cur.file)
+	})
+	customActionGroup.AddAction(aPrevFile)
+	win.AddAction(aPrevFile)
+
 	keyMap := map[uint]func(){
 		gdk.KEY_q: func() {
 			application.Quit()
 		},
 		gdk.KEY_Left: func() {
-			cur.file = (cur.file - 1)
-			if cur.file < 0 {
-				cur.file = nbFiles + cur.file
-			}
-			cur.img = 0
+			cur.Prev(nbFiles)
 			drawImage(cur.file)
 		},
 		gdk.KEY_Right: func() {
-			cur.file = (cur.file + 1) % nbFiles
-			cur.img = 0
+			cur.Next(nbFiles)
 			drawImage(cur.file)
 		},
 		gdk.KEY_Up: func() {
@@ -382,8 +393,3 @@ func getPixels(img image.Image) ([]float64, error) {
 
 	return pixels, nil
 }
-
-// img.At(x, y).RGBA() returns four uint32 values; we want a Pixel
-// func rgbaToPixel(r uint32, g uint32, b uint32, a uint32) Pixel {
-// 	return Pixel{int(r / 257), int(g / 257), int(b / 257), int(a / 257)}
-// }
