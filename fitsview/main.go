@@ -27,14 +27,6 @@ type imageInfo struct {
 	orig  image.Point
 }
 
-// Keymap
-const (
-	KEY_LEFT  uint = 65361
-	KEY_UP    uint = 65362
-	KEY_RIGHT uint = 65363
-	KEY_DOWN  uint = 65364
-)
-
 func main() {
 	if len(os.Args) < 2 {
 		log.Fatal("usage: script FILE ...")
@@ -80,7 +72,8 @@ func main() {
 	win.Add(imageWidget)
 
 	drawImage := func(i int) {
-		log.Printf("file: %v, %d image(s)\n", infos[i].Name, len(infos[i].Images))
+		log.Printf("file: %v\n", infos[i].Name)
+		log.Printf("ext : %d/%d\n", cur.img+1, len(infos[i].Images))
 		win.SetTitle(infos[i].Name)
 		img := &infos[i].Images[cur.img]
 		pixels, _ := getPixels(img)
@@ -92,7 +85,10 @@ func main() {
 	drawImage(cur.file)
 
 	keyMap := map[uint]func(){
-		KEY_LEFT: func() {
+		gdk.KEY_q: func() {
+			gtk.MainQuit()
+		},
+		gdk.KEY_Left: func() {
 			cur.file = (cur.file - 1)
 			if cur.file < 0 {
 				cur.file = nbFiles + cur.file
@@ -100,13 +96,22 @@ func main() {
 			cur.img = 0
 			drawImage(cur.file)
 		},
-		// KEY_UP:    func() { y-- },
-		KEY_RIGHT: func() {
+		gdk.KEY_Right: func() {
 			cur.file = (cur.file + 1) % nbFiles
 			cur.img = 0
 			drawImage(cur.file)
 		},
-		// KEY_DOWN:  func() { y++ },
+		gdk.KEY_Up: func() {
+			cur.img = (cur.img + 1) % len(infos[cur.file].Images)
+			drawImage(cur.file)
+		},
+		gdk.KEY_Down: func() {
+			cur.img = (cur.img - 1)
+			if cur.img < 0 {
+				cur.img = len(infos[cur.file].Images) + cur.img
+			}
+			drawImage(cur.file)
+		},
 	}
 
 	win.Connect("key-press-event", func(win *gtk.Window, ev *gdk.Event) {
