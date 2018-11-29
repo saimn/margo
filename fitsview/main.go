@@ -160,21 +160,8 @@ func newWindow(application *gtk.Application) *gtk.ApplicationWindow {
 		log.Printf("ext : %d/%d\n", cur.img+1, len(infos[i].Images))
 		header.SetSubtitle(infos[i].Name)
 		img := &infos[i].Images[cur.img]
-		pixels, _ := getPixels(img)
-
-		// Sort the values.
-		inds := make([]int, len(pixels))
-		floats.Argsort(pixels, inds)
-		log.Printf("min: %v, max: %v\n", pixels[0], pixels[len(pixels)-1])
-
-		mean, std := stat.MeanStdDev(pixels, nil)
-		log.Printf("mean: %v, std: %v\n", mean, std)
-
-		quant1 := stat.Quantile(0.01, stat.Empirical, pixels, nil)
-		quant99 := stat.Quantile(0.99, stat.Empirical, pixels, nil)
-		log.Printf("quant1: %v, quant99: %v\n", quant1, quant99)
-
-		pixbuf, _ := pixBufFromImage(img.Image, quant1, quant99)
+		qmin, qmax := computeQuantiles(img, 0.01, 0.99)
+		pixbuf, _ := pixBufFromImage(img.Image, qmin, qmax)
 		imageWidget.SetFromPixbuf(pixbuf)
 	}
 	drawImage(cur.file)
@@ -276,6 +263,24 @@ func processFiles() []fileInfo {
 	}
 
 	return infos
+}
+
+func computeQuantiles(img image.Image, qmin, qmax float64) (float64, float64) {
+	pixels, _ := getPixels(img)
+
+	// Sort the values.
+	inds := make([]int, len(pixels))
+	floats.Argsort(pixels, inds)
+	log.Printf("min: %v, max: %v\n", pixels[0], pixels[len(pixels)-1])
+
+	// mean, std := stat.MeanStdDev(pixels, nil)
+	// log.Printf("mean: %v, std: %v\n", mean, std)
+
+	q1 := stat.Quantile(qmin, stat.Empirical, pixels, nil)
+	q2 := stat.Quantile(qmax, stat.Empirical, pixels, nil)
+	log.Printf("quantiles %.2f=%v, %.2f=%v\n", qmin, q1, qmax, q2)
+
+	return q1, q2
 }
 
 func openStream(name string) (io.ReadCloser, error) {
