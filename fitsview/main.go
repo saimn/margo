@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"image"
 	"io"
 	"io/ioutil"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/gotk3/gotk3/gdk"
+	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
 	"github.com/saimn/fitsio"
 	"gonum.org/v1/gonum/floats"
@@ -30,40 +32,119 @@ type imageInfo struct {
 	orig  image.Point
 }
 
+type cursor struct {
+	file int
+	img  int
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		log.Fatal("usage: script FILE ...")
 	}
-	flag.Parse()
 	log.SetFlags(0)
 	log.SetPrefix("[view-fits] ")
 
+	const appID = "com.github.saimn.fitsview"
+	application, err := gtk.ApplicationNew(appID, glib.APPLICATION_HANDLES_COMMAND_LINE)
+	if err != nil {
+		log.Fatal("Could not create application:", err)
+	}
+
+	application.Connect("command-line", func() int {
+		flag.Parse()
+		fmt.Printf("Args: %v\n", flag.Args())
+		application.Activate()
+		return 0
+	})
+
+	application.Connect("activate", func() {
+		win := newWindow(application)
+
+		// aNew := glib.SimpleActionNew("new", nil)
+		// aNew.Connect("activate", func() {
+		// 	newWindow(application).ShowAll()
+		// })
+		// application.AddAction(aNew)
+
+		aQuit := glib.SimpleActionNew("quit", nil)
+		aQuit.Connect("activate", func() {
+			application.Quit()
+		})
+		application.AddAction(aQuit)
+
+		win.ShowAll()
+	})
+
+	os.Exit(application.Run(os.Args))
+}
+
+func newWindow(application *gtk.Application) *gtk.ApplicationWindow {
 	infos := processFiles()
 	nbFiles := len(infos)
 	if len(infos) == 0 {
 		log.Fatal("No image among given FITS files.")
 	}
 
-	type cursor struct {
-		file int
-		img  int
-	}
-
 	// Current displayed file and image in file.
 	cur := cursor{file: 0, img: 0}
 
-	// Initialize GTK without parsing any command line arguments.
-	gtk.Init(nil)
-
-	// Create a new toplevel window, set its title, and connect it to the
-	// "destroy" signal to exit the GTK main loop when it is destroyed.
-	win, err := gtk.WindowNew(gtk.WINDOW_TOPLEVEL)
+	win, err := gtk.ApplicationWindowNew(application)
 	if err != nil {
 		log.Fatal("Unable to create window:", err)
 	}
-	win.Connect("destroy", func() {
-		gtk.MainQuit()
+	win.SetTitle("FITSview")
+
+	// Create a header bar
+	header, err := gtk.HeaderBarNew()
+	if err != nil {
+		log.Fatal("Could not create header bar:", err)
+	}
+	header.SetShowCloseButton(true)
+	header.SetTitle("GOTK3")
+
+	// Create a new menu button
+	mbtn, err := gtk.MenuButtonNew()
+	if err != nil {
+		log.Fatal("Could not create menu button:", err)
+	}
+
+	// Set up the menu model for the button
+	menu := glib.MenuNew()
+	if menu == nil {
+		log.Fatal("Could not create menu (nil)")
+	}
+	// Actions with the prefix 'app' reference actions on the application
+	// Actions with the prefix 'win' reference actions on the current window (specific to ApplicationWindow)
+	// Other prefixes can be added to widgets via InsertActionGroup
+	// menu.Append("New Window", "app.new")
+	// menu.Append("Close Window", "win.close")
+	// menu.Append("Custom Panic", "custom.panic")
+	menu.Append("Quit", "app.quit")
+
+	// Create the action "win.close"
+	aClose := glib.SimpleActionNew("close", nil)
+	aClose.Connect("activate", func() {
+		win.Close()
 	})
+	win.AddAction(aClose)
+
+	// Create and insert custom action group with prefix "custom"
+	// customActionGroup := glib.SimpleActionGroupNew()
+	// win.InsertActionGroup("custom", customActionGroup)
+
+	// Create an action in the custom action group
+	// aPanic := glib.SimpleActionNew("panic", nil)
+	// aPanic.Connect("activate", func() {
+	// 	lbl.SetLabel("PANIC!")
+	// })
+	// customActionGroup.AddAction(aPanic)
+	// win.AddAction(aPanic)
+
+	mbtn.SetMenuModel(&menu.MenuModel)
+
+	// add the menu button to the header
+	header.PackStart(mbtn)
+	win.SetTitlebar(header)
 
 	// Create a new label widget to show in the window.
 	// l, err := gtk.LabelNew("Hello, gotk3!")
@@ -77,7 +158,7 @@ func main() {
 	drawImage := func(i int) {
 		log.Printf("file: %v\n", infos[i].Name)
 		log.Printf("ext : %d/%d\n", cur.img+1, len(infos[i].Images))
-		win.SetTitle(infos[i].Name)
+		header.SetSubtitle(infos[i].Name)
 		img := &infos[i].Images[cur.img]
 		pixels, _ := getPixels(img)
 
@@ -100,7 +181,7 @@ func main() {
 
 	keyMap := map[uint]func(){
 		gdk.KEY_q: func() {
-			gtk.MainQuit()
+			application.Quit()
 		},
 		gdk.KEY_Left: func() {
 			cur.file = (cur.file - 1)
@@ -116,19 +197,23 @@ func main() {
 			drawImage(cur.file)
 		},
 		gdk.KEY_Up: func() {
-			cur.img = (cur.img + 1) % len(infos[cur.file].Images)
-			drawImage(cur.file)
+			if len(infos[cur.file].Images) > 1 {
+				cur.img = (cur.img + 1) % len(infos[cur.file].Images)
+				drawImage(cur.file)
+			}
 		},
 		gdk.KEY_Down: func() {
-			cur.img = (cur.img - 1)
-			if cur.img < 0 {
-				cur.img = len(infos[cur.file].Images) + cur.img
+			if len(infos[cur.file].Images) > 1 {
+				cur.img = (cur.img - 1)
+				if cur.img < 0 {
+					cur.img = len(infos[cur.file].Images) + cur.img
+				}
+				drawImage(cur.file)
 			}
-			drawImage(cur.file)
 		},
 	}
 
-	win.Connect("key-press-event", func(win *gtk.Window, ev *gdk.Event) {
+	win.Connect("key-press-event", func(win *gtk.ApplicationWindow, ev *gdk.Event) {
 		keyEvent := &gdk.EventKey{ev}
 		if move, found := keyMap[keyEvent.KeyVal()]; found {
 			move()
@@ -140,12 +225,7 @@ func main() {
 	img := &infos[cur.file].Images[cur.img]
 	win.SetDefaultSize(img.Bounds().Dx(), img.Bounds().Dy())
 
-	// Recursively show all widgets contained in this window.
-	win.ShowAll()
-
-	// Begin executing the GTK main loop.  This blocks until
-	// gtk.MainQuit() is run.
-	gtk.Main()
+	return win
 }
 
 func processFiles() []fileInfo {
