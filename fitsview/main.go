@@ -13,8 +13,11 @@ import (
 	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/gtk"
 	"github.com/saimn/fitsio"
+	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/stat"
 )
+
+const maxUint32 = 65535
 
 type fileInfo struct {
 	Name   string
@@ -77,9 +80,20 @@ func main() {
 		win.SetTitle(infos[i].Name)
 		img := &infos[i].Images[cur.img]
 		pixels, _ := getPixels(img)
-		mean := stat.Mean(pixels, nil)
-		log.Printf("mean: %v\n", mean)
-		pixbuf, _ := pixBufFromImage(img.Image)
+
+		// Sort the values.
+		inds := make([]int, len(pixels))
+		floats.Argsort(pixels, inds)
+		log.Printf("min: %v, max: %v\n", pixels[0], pixels[len(pixels)-1])
+
+		mean, std := stat.MeanStdDev(pixels, nil)
+		log.Printf("mean: %v, std: %v\n", mean, std)
+
+		quant1 := stat.Quantile(0.01, stat.Empirical, pixels, nil)
+		quant99 := stat.Quantile(0.99, stat.Empirical, pixels, nil)
+		log.Printf("quant1: %v, quant99: %v\n", quant1, quant99)
+
+		pixbuf, _ := pixBufFromImage(img.Image, quant1, quant99)
 		imageWidget.SetFromPixbuf(pixbuf)
 	}
 	drawImage(cur.file)
@@ -218,7 +232,7 @@ func openStream(name string) (io.ReadCloser, error) {
 	}
 }
 
-func pixBufFromImage(picture image.Image) (*gdk.Pixbuf, error) {
+func pixBufFromImage(picture image.Image, vmin, vmax float64) (*gdk.Pixbuf, error) {
 	width := picture.Bounds().Max.X
 	height := picture.Bounds().Max.Y
 
@@ -229,25 +243,35 @@ func pixBufFromImage(picture image.Image) (*gdk.Pixbuf, error) {
 	pixelSlice := pixbuf.GetPixels()
 
 	const bytesPerPixel = 4
-	indexInPixelSlice := 0
+	i := 0
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			colour := picture.At(x, y)
-			r, g, b, a := colour.RGBA()
+			r, _, _, _ := colour.RGBA()
 
-			pixelSlice[indexInPixelSlice] = uint32ColourToByte(r)
-			pixelSlice[indexInPixelSlice+1] = uint32ColourToByte(g)
-			pixelSlice[indexInPixelSlice+2] = uint32ColourToByte(b)
-			pixelSlice[indexInPixelSlice+3] = uint32ColourToByte(a)
+			// scale
+			var val uint32
+			if r < uint32(vmin) {
+				val = 0
+			} else if r > uint32(vmax) {
+				val = maxUint32
+			} else {
+				val = uint32((float64(r) - vmin) / (vmax - vmin) * maxUint32)
+			}
+			bval := uint32ToByte(val)
+			pixelSlice[i] = bval   // r
+			pixelSlice[i+1] = bval // g
+			pixelSlice[i+2] = bval // b
+			pixelSlice[i+3] = 255
 
-			indexInPixelSlice += bytesPerPixel
+			i += bytesPerPixel
 		}
 	}
 
 	return pixbuf, nil
 }
 
-func uint32ColourToByte(value uint32) byte {
+func uint32ToByte(value uint32) byte {
 	const ratio = float64(256) / float64(65536)
 	byteValue := ratio * float64(value)
 	if byteValue > 255 {
@@ -265,7 +289,9 @@ func getPixels(img image.Image) ([]float64, error) {
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			r, _, _, _ := img.At(x, y).RGBA()
-			pixels = append(pixels, float64(r))
+			if r != 0 {
+				pixels = append(pixels, float64(r))
+			}
 		}
 	}
 
