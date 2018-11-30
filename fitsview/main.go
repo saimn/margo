@@ -50,6 +50,9 @@ func (cur *cursor) Prev(nbFiles int) {
 	cur.img = 0
 }
 
+// Current displayed file and image in file.
+var cur = cursor{file: 0, img: 0}
+
 func main() {
 	if len(os.Args) < 2 {
 		log.Fatal("usage: script FILE ...")
@@ -97,9 +100,6 @@ func newWindow(application *gtk.Application) *gtk.ApplicationWindow {
 	if len(infos) == 0 {
 		log.Fatal("No image among given FITS files.")
 	}
-
-	// Current displayed file and image in file.
-	cur := cursor{file: 0, img: 0}
 
 	win, err := gtk.ApplicationWindowNew(application)
 	if err != nil {
@@ -151,8 +151,14 @@ func newWindow(application *gtk.Application) *gtk.ApplicationWindow {
 	header.PackStart(mbtn)
 	win.SetTitlebar(header)
 
+	vbox, _ := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 0)
+	win.Add(vbox)
+
 	imageWidget, err := gtk.ImageNew()
-	win.Add(imageWidget)
+	vbox.Add(imageWidget)
+	// win.SetDefault(imageWidget)
+
+	vbox.PackStart(footerBar(), false, false, 5)
 
 	drawImage := func(i int) {
 		log.Printf("file: %v\n", infos[i].Name)
@@ -224,6 +230,44 @@ func newWindow(application *gtk.Application) *gtk.ApplicationWindow {
 	win.SetDefaultSize(img.Bounds().Dx(), img.Bounds().Dy())
 
 	return win
+}
+
+func footerBar() *gtk.Box {
+	hbox, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 0)
+
+	minLab, err := gtk.LabelNew("qmin")
+	if err != nil {
+		log.Fatal("Unable to create label:", err)
+	}
+	hbox.PackStart(minLab, false, false, 10)
+	minBtn, err := gtk.SpinButtonNewWithRange(0, 100, 0.5)
+	if err != nil {
+		log.Fatal("Unable to create spin button:", err)
+	}
+	minBtn.SetValue(1)
+	hbox.PackStart(minBtn, false, false, 10)
+
+	maxLab, err := gtk.LabelNew("qmax")
+	if err != nil {
+		log.Fatal("Unable to create label:", err)
+	}
+	hbox.PackStart(maxLab, false, false, 10)
+	maxBtn, err := gtk.SpinButtonNewWithRange(0, 100, 0.5)
+	if err != nil {
+		log.Fatal("Unable to create spin button:", err)
+	}
+	maxBtn.SetValue(99)
+	hbox.PackStart(maxBtn, false, false, 10)
+
+	minBtn.Connect("value-changed", func(sb *gtk.SpinButton) {
+		fmt.Printf("val: %v\n", float64(sb.GetValue()))
+	})
+
+	maxBtn.Connect("value-changed", func(sb *gtk.SpinButton) {
+		fmt.Printf("val: %v\n", float64(sb.GetValue()))
+	})
+
+	return hbox
 }
 
 func processFiles() []fileInfo {
